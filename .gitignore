@@ -1,0 +1,8 @@
+/target
+.DS_Store
+*.swp
+.env
+program.asm
+program.s
+obj.o
+a.out

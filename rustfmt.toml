@@ -1,0 +1,4 @@
+edition = "2021"
+tab_spaces = 2
+struct_lit_width = 36
+single_line_if_else_max_width = 76
