@@ -3,10 +3,11 @@
 
 use axum::{
   extract::Json,
-  response::Json as ResponseJson,
+  response::{IntoResponse, Json as ResponseJson, Response},
   routing::{get, post},
   Router,
 };
+use axum_auth::AuthBearer;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Stdio};
@@ -24,13 +25,34 @@ struct JobOutput {
   stderr: String,
 }
 
-async fn handle_job(Json(payload): Json<JobInput>) -> ResponseJson<JobOutput> {
+struct BadRequest;
+
+impl IntoResponse for BadRequest {
+  fn into_response(self) -> Response {
+    Response::builder()
+      .status(400)
+      .body("Bad Request".into())
+      .unwrap()
+  }
+}
+
+/// Execute arbritary assembly code, what could possibly go wrong?
+#[axum_macros::debug_handler]
+async fn handle_job(
+  AuthBearer(token): AuthBearer,
+  Json(input): Json<JobInput>,
+) -> Result<Json<JobOutput>, BadRequest> {
+  let check_token = env::var("ACCESS_TOKEN").unwrap();
+  if token != check_token {
+    return Err(BadRequest);
+  }
+
   let fileext = env::var("ASM_FILE_EXT").unwrap();
   let assemble_link_cmd = env::var("ASSEMBLE_LINK_EXEC_CMD").unwrap();
   let filename = format!("program.{}", fileext);
   clean_files(&filename);
 
-  fs::write(&filename, payload.asm).unwrap();
+  fs::write(&filename, input.asm).unwrap();
 
   let output = Command::new("sh")
     .arg("-c")
@@ -45,7 +67,7 @@ async fn handle_job(Json(payload): Json<JobInput>) -> ResponseJson<JobOutput> {
   let exit_code = output.status.code().unwrap();
   clean_files(&filename);
 
-  ResponseJson(JobOutput { exit_code, stdout, stderr })
+  Ok(Json(JobOutput { exit_code, stdout, stderr }))
 }
 
 #[tokio::main]
@@ -54,7 +76,7 @@ async fn main() {
 
   // build our application with a single route
   let app = Router::new()
-    .route("/foo", post(handle_job))
+    .route("/asm", post(handle_job))
     .route("/", get(|| async { "Hello, World!" }));
 
   // run our app with hyper, listening globally on port 3000
